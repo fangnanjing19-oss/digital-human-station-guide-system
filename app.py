@@ -358,22 +358,23 @@ if st.session_state.messages:
             followup_html = "<div class='archive-header'>💬 推荐追问</div><div class='followup-row'>" + "".join(links) + "</div><br>"
 
         detail_html = safe_text(llm_data.get('detailed_text', ''))
-        archive_html = textwrap.dedent(f"""
-        <div class="archive-panel">
-            <div class="archive-header">📚 老红军的详细回忆档案</div>
-            <div class="detail-text">{detail_html}</div>
-            <br>
-            {followup_html}
-            <div class="archive-header">🧾 本次回答引用资料来源</div>
-            <div>{citation_html}</div>
-            <br>
-            <div class="archive-header">🔍 本次回答引用的原始史料证据</div>
-            <details class="evidence-details">
-                <summary>展开查看命中的馆藏资料片段</summary>
-                {evidence_html}
-            </details>
-        </div>
-        """).strip()
+        archive_html = (
+            f'<div class="archive-panel">'
+            f'<div class="archive-header">📚 老红军的详细回忆档案</div>'
+            f'<div class="detail-text">{detail_html}</div>'
+            f'<br>'
+            f'{followup_html}'
+            f'<div class="archive-header">🧾 本次回答引用资料来源</div>'
+            f'<div>{citation_html}</div>'
+            f'<br>'
+            f'<div class="archive-header">🔍 本次回答引用的原始史料证据</div>'
+            f'<details class="evidence-details">'
+            f'<summary>展开查看命中的馆藏资料片段</summary>'
+            f'{evidence_html}'
+            f'</details>'
+            f'</div>'
+        )
+
         st.markdown(archive_html, unsafe_allow_html=True)
 
         audio_path = st.session_state.get("last_audio_path") or "speech.mp3"
