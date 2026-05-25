@@ -213,7 +213,7 @@ st.markdown(f"""
         width: 60% !important; min-width: 400px !important; z-index: 10000 !important; padding: 6px 20px !important;
     }}
     [data-testid="stChatInput"] textarea {{
-        color: #000000 !important; background-color: transparent !important; font-size: 16px !important; line-height: 1.6 !important; caret-color: #d4af37 !important;
+        color: #ffffff !important; background-color: transparent !important; font-size: 16px !important; line-height: 1.6 !important; caret-color: #d4af37 !important;
     }}
     [data-testid="stChatInput"] textarea::placeholder {{ color: rgba(255,255,255,0.3) !important; font-style: italic !important; }}
     [data-testid="stChatInput"] button {{ background: rgba(212, 175, 55, 0.05) !important; border-radius: 50% !important; transition: all 0.3s ease !important; }}
