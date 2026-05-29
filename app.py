@@ -44,6 +44,36 @@ def safe_text(value) -> str:
     # 避免模型输出的 ``` 触发 Markdown 代码块，导致后续 HTML 原样显示
     text = text.replace("`", "&#96;")
     return text.replace("\n", "<br>")
+def clean_source_name(source: str) -> str:
+    """清理史料来源文件名，只保留适合展示的书名。"""
+    if not source:
+        return "未知史料"
+
+    import re
+
+    name = str(source)
+
+    # 去掉路径
+    name = name.split("/")[-1].split("\\")[-1]
+
+    # 去掉文件扩展名
+    name = name.replace(".pdf", "").replace(".PDF", "")
+
+    # 去掉 libgen / 文件编号 / 下载痕迹
+    name = name.replace("libgen.li", "")
+    name = name.replace("libgen", "")
+
+    # 去掉花括号里的作者、编号等信息，例如 {107064222}
+    name = re.sub(r"\{[^}]*\}", "", name)
+
+    # 去掉 OCR 后缀和多余空格
+    name = name.replace("_ocr", "")
+    name = name.replace("ocr", "")
+    name = name.replace(" - ", " ")
+    name = name.replace("副本", "")
+    name = " ".join(name.split())
+
+    return name.strip(" -_《》") or "未知史料"
 
 
 def make_action_link(label: str, query: str | None = None, guide: bool | None = None, css_class: str = "") -> str:
@@ -116,6 +146,20 @@ img_base64 = get_image_base64("veteran.png")
 has_answer = bool(st.session_state.messages and st.session_state.messages[-1].get("role") == "assistant")
 hero_class = "veteran-img speaking" if has_answer else "veteran-img"
 
+if has_answer:
+    hero_html = """
+<div class="veteran-hero-container answer-title-only">
+    <div class="hero-title">长征老红军</div>
+</div>
+"""
+else:
+    hero_html = f"""
+<div class="veteran-hero-container">
+    <div class="hero-title">长征老红军</div>
+    <img src="data:image/png;base64,{img_base64 if img_base64 else ''}" class="{hero_class}">
+</div>
+"""
+
 # --- 6. 原 UI 样式：保持板块位置与比例，只加轻微增强 ---
 st.markdown(f"""
     <style>
@@ -130,14 +174,24 @@ st.markdown(f"""
     html, body {{ height: 100vh !important; margin: 0 !important; overflow: hidden !important; }}
 
     .veteran-hero-container {{
-        position: fixed; top: 38%; left: 50%; transform: translate(-50%, -50%);
-        text-align: center; z-index: 1; width: 100%;
-    }}
-    .hero-title {{
-        color: #d4af37; font-family: "KaiTi", "STKaiti", serif; font-size: 32px;
-        margin-bottom: 25px; letter-spacing: 6px;
-        text-shadow: 0px 4px 15px rgba(212, 175, 55, 0.4);
-    }}
+    position: fixed; top: 38%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; z-index: 1; width: 100%;
+}}
+
+.answer-title-only {{
+    top: 13% !important;
+}}
+
+.answer-title-only .hero-title {{
+    font-size: 34px !important;
+    margin-bottom: 0 !important;
+}}
+
+.hero-title {{
+    color: #d4af37; font-family: "KaiTi", "STKaiti", serif; font-size: 32px;
+    margin-bottom: 25px; letter-spacing: 6px;
+    text-shadow: 0px 4px 15px rgba(212, 175, 55, 0.4);
+}}
     .veteran-img {{
         width: 360px;
         border-radius: 12px;
@@ -156,18 +210,48 @@ st.markdown(f"""
     }}
 
     .subtitle-overlay {{
-        position: fixed; top: 62%; left: 50%; transform: translateX(-50%); width: 70%;
-        color: #fff; font-size: 22px; font-weight: normal; line-height: 1.5; text-align: center; z-index: 10;
-        text-shadow: 2px 2px 5px #000;
-    }}
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(82vw, 1250px);
+    text-align: center;
+    color: #ffffff;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.55;
+    letter-spacing: 1px;
+    text-shadow: 0 4px 18px rgba(0,0,0,0.9);
+    z-index: 10;
+    pointer-events: none;
+}}
     .archive-panel {{
-        position: fixed; top: 68%; left: 50%; transform: translateX(-50%); width: 75%; height: 20vh;
-        overflow-y: auto; color: #d0d0d0; font-size: 16px; line-height: 1.8; z-index: 9;
-        background: rgba(20, 0, 0, 0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-        padding: 20px 30px; border-radius: 12px; border: 1px solid rgba(212,175,55,0.15);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-    }}
-    .archive-header {{ color: #d4af37; font-size: 18px; margin-bottom: 8px; border-bottom: 1px solid rgba(212,175,55,0.3); padding-bottom: 5px; }}
+    position: fixed;
+    top: 56%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(82vw, 1320px);
+    height: 52vh;
+    overflow-y: auto;
+    color: #e8e8e8;
+    font-size: 18px;
+    line-height: 1.95;
+    z-index: 9;
+    background: rgba(20, 0, 0, 0.68);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    padding: 30px 40px;
+    border-radius: 16px;
+    border: 1px solid rgba(212,175,55,0.22);
+    box-shadow: 0 14px 42px rgba(0,0,0,0.85);
+}}
+    .archive-header {{
+    color: #d4af37;
+    font-size: 22px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(212,175,55,0.25);
+}}
     .citation-chip {{
         display: inline-block; margin: 0 8px 8px 0; padding: 5px 10px;
         border: 1px solid rgba(212,175,55,0.28); border-radius: 999px;
@@ -275,10 +359,7 @@ st.markdown(f"""
     .source-line {{ margin-bottom: 6px; color: #cfcfcf; font-size: 13px; line-height: 1.65; }}
     .source-index {{ color: #d4af37; font-weight: 700; }}
     </style>
-    <div class="veteran-hero-container">
-        <div class="hero-title">长征老红军</div>
-        <img src="data:image/png;base64,{img_base64 if img_base64 else ''}" class="{hero_class}">
-    </div>
+    {hero_html}
 """, unsafe_allow_html=True)
 
 
@@ -313,17 +394,18 @@ if st.session_state.messages:
             seen = set()
             for idx, c in enumerate(citations[:5], start=1):
                 source_raw = str(c.get("source", "未知资料"))
-                source_short = source_raw
-                if len(source_short) > 46:
-                    source_short = source_short[:22] + "…" + source_short[-18:]
+                source_display = safe_text(clean_source_name(source_raw))
+
                 page = safe_text(c.get("page", "?"))
                 hits = safe_text("、".join(c.get("hits", [])[:3]) or "关键词命中")
+
                 key = (source_raw, page)
                 if key in seen:
                     continue
+
                 seen.add(key)
                 lines.append(
-                    f"<div class='source-line'><span class='source-index'>证据源 {idx}</span> ｜《{safe_text(source_short)}》第 {page} 页 ｜ 命中：{hits}</div>"
+                    f"<div class='source-line'><span class='source-index'>证据源 {idx}</span> | 《{source_display}》 第 {page} 页 | 命中：{hits}</div>"
                 )
             citation_html = "".join(lines)
         else:
@@ -333,7 +415,8 @@ if st.session_state.messages:
         if snippets:
             cards = []
             for idx, item in enumerate(snippets[:4], start=1):
-                source = safe_text(item.get("source", "未知资料"))
+                source_raw = item.get("source", "未知资料")
+                source = safe_text(clean_source_name(source_raw))
                 page = safe_text(item.get("page", "?"))
                 hits = safe_text("、".join(item.get("hits", [])[:5]))
                 content = safe_text(item.get("content", ""))
