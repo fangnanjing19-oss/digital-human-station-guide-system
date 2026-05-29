@@ -90,7 +90,7 @@ def make_action_link(label: str, query: str | None = None, guide: bool | None = 
 def handle_response(user_query: str):
     loading_slot = st.empty()
     loading_slot.markdown(
-        "<div class='retrieval-loading'>正在检索长征档案、比对史料证据...</div>",
+        "<div class='retrieval-loading'>正在检索长征档案、比对史料证据与关联文物...</div>",
         unsafe_allow_html=True,
     )
     try:
@@ -272,6 +272,80 @@ st.markdown(f"""
         margin: 0 12px 12px 12px; padding: 12px 14px; border-left: 2px solid rgba(212,175,55,0.45);
         background: rgba(40, 10, 10, 0.42); color: #bfbfbf; border-radius: 8px; font-size: 13px; line-height: 1.75;
     }}
+    .relic-grid {{
+    display: grid;
+    grid-template-columns: minmax(360px, 620px);
+    justify-content: center;
+    gap: 16px;
+    margin-top: 14px;
+}}
+
+.relic-card {{
+    background: rgba(0,0,0,0.22);
+    border: 1px solid rgba(212,175,55,0.22);
+    border-radius: 12px;
+    padding: 14px;
+}}
+
+.relic-img {{
+    width: 100%;
+    max-height: 420px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    margin-bottom: 10px;
+}}
+
+.relic-title {{
+    color: #d4af37;
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1.5;
+}}
+
+.relic-meta {{
+    color: #aaa;
+    font-size: 13px;
+    margin-top: 4px;
+}}
+
+.relic-topic {{
+    color: #ddd;
+    font-size: 14px;
+    margin-top: 8px;
+}}
+
+.relic-summary {{
+    color: #cfcfcf;
+    font-size: 14px;
+    line-height: 1.65;
+    margin-top: 8px;
+}}
+.relic-zoom {{
+    margin-top: 8px;
+}}
+
+.relic-zoom summary {{
+    cursor: pointer;
+    color: #d4af37;
+    font-size: 13px;
+    user-select: none;
+    list-style: none;
+}}
+
+.relic-zoom summary::-webkit-details-marker {{
+    display: none;
+}}
+
+.relic-img-large {{
+    width: 100%;
+    max-height: none;
+    object-fit: contain;
+    border-radius: 10px;
+    margin-top: 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(212,175,55,0.18);
+}}
     .evidence-meta {{ color: #d4af37; font-size: 12px; margin-bottom: 6px; }}
     .retrieval-loading {{
         position: fixed; top: 58%; left: 50%; transform: translateX(-50%); z-index: 10001;
@@ -386,6 +460,7 @@ if st.session_state.messages:
     if last_msg["role"] == "assistant":
         res = last_msg["data"]
         llm_data = res.get("llm_data", {})
+        relics = res.get("relic_matches", [])
         st.markdown(f"<div class='subtitle-overlay'>{safe_text(llm_data.get('voice_script', ''))}</div>", unsafe_allow_html=True)
 
         citations = res.get("citations", [])
@@ -397,19 +472,67 @@ if st.session_state.messages:
                 source_display = safe_text(clean_source_name(source_raw))
 
                 page = safe_text(c.get("page", "?"))
-                hits = safe_text("、".join(c.get("hits", [])[:3]) or "关键词命中")
 
                 key = (source_raw, page)
                 if key in seen:
                     continue
 
                 seen.add(key)
+
+                page_part = f" 第 {page} 页" if page and page != "?" else ""
+
                 lines.append(
-                    f"<div class='source-line'><span class='source-index'>证据源 {idx}</span> | 《{source_display}》 第 {page} 页 | 命中：{hits}</div>"
+                    f"<div class='source-line'>"
+                    f"<span class='source-index'>证据源 {idx}</span> | 《{source_display}》{page_part}"
+                    f"</div>"
                 )
             citation_html = "".join(lines)
         else:
             citation_html = "<span style='font-size: 13px; color: #aaa;'>本次没有检索到直接匹配的史料切片。</span>"
+        if relics:
+            relic_cards = []
+            for idx, relic in enumerate(relics[:3], start=1):
+                title = safe_text(relic.get("title", "相关长征文物"))
+                caption = safe_text(relic.get("caption") or relic.get("summary") or "")
+
+                page = safe_text(relic.get("page", "?"))
+
+                image_path = relic.get("image") or relic.get("image_path") or ""
+
+                img_html = ""
+                if image_path and os.path.exists(image_path):
+                    try:
+                        with open(image_path, "rb") as f:
+                            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+                        img_html = (
+                            f"<img class='relic-img' src='data:image/png;base64,{img_b64}'>"
+                            f"<details class='relic-zoom'>"
+                            f"<summary>🔍 展开查看大图</summary>"
+                            f"<img class='relic-img-large' src='data:image/png;base64,{img_b64}'>"
+                            f"</details>"
+                        )
+                    except Exception:
+                        img_html = ""
+
+                relic_cards.append(
+                    f'<div class="relic-card">'
+                    f'{img_html}'
+                    f'<div class="relic-title">{title}</div>'
+                    f'<div class="relic-meta">来源：《红色文物中的长征》</div>'
+                    f'<div class="relic-summary">{caption}</div>'
+                    f'</div>'
+                )
+
+            relic_html = (
+                f'<br>'
+                f'<div class="archive-header">🏺 本次回答关联长征文物</div>'
+                f'<div class="relic-grid">'
+                f'{"".join(relic_cards)}'
+                f'</div>'
+            )
+        else:
+            relic_html = ""
+
 
         snippets = res.get("evidence_snippets", [])
         if snippets:
@@ -417,7 +540,7 @@ if st.session_state.messages:
             for idx, item in enumerate(snippets[:4], start=1):
                 source_raw = item.get("source", "未知资料")
                 source = safe_text(clean_source_name(source_raw))
-                page = safe_text(item.get("page", "?"))
+
                 hits = safe_text("、".join(item.get("hits", [])[:5]))
                 content = safe_text(item.get("content", ""))
                 cards.append(
@@ -449,6 +572,7 @@ if st.session_state.messages:
             f'{followup_html}'
             f'<div class="archive-header">🧾 本次回答引用资料来源</div>'
             f'<div>{citation_html}</div>'
+            f'{relic_html}'
             f'<br>'
             f'<div class="archive-header">🔍 本次回答引用的原始史料证据</div>'
             f'<details class="evidence-details">'
