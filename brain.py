@@ -28,6 +28,109 @@ def load_kb() -> List[Dict[str, Any]]:
     except Exception:
         return []
 
+RELIC_CATALOG_PATH = Path("relic_catalog.json")
+
+
+@lru_cache(maxsize=1)
+def load_relic_catalog() -> List[Dict[str, Any]]:
+    """加载长征文物目录。没有文件时返回空列表，避免程序崩溃。"""
+    if not RELIC_CATALOG_PATH.exists():
+        return []
+
+    try:
+        with RELIC_CATALOG_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def match_relics(question: str, answer_text: str, top_k: int = 2) -> List[Dict[str, Any]]:
+    """更保守的长征文物匹配：优先看用户问题，避免因为回答正文太长而误匹配。"""
+    catalog = load_relic_catalog()
+    if not catalog:
+        return []
+
+    q = str(question or "")
+    a = str(answer_text or "")
+
+    # 这些词太泛，单独命中不能作为展示文物的理由
+    weak_terms = {
+        "红军", "长征", "战斗", "战场", "工具", "文物", "资料", "根据地",
+        "渡江", "过河", "行军", "群众", "宣传", "布告", "手稿", "会师",
+        "抗日", "北上", "缴获", "雪山", "草地"
+    }
+
+    # 用户问得比较泛时，做少量人工增强，避免“渡江工具”乱匹配
+    special_boost = {}
+    if any(x in q for x in ["渡江", "过河", "船只", "竹筏", "棕绳", "水马", "乌江"]):
+        special_boost["relic_009"] = 4
+
+    if any(x in q for x in ["泸定桥", "铁索桥", "铁索链", "飞夺泸定"]):
+        special_boost["relic_017"] = 5
+
+    if any(x in q for x in ["遵义", "遵义会议", "总政治部布告"]):
+        special_boost["relic_010"] = 4
+
+    if any(x in q for x in ["湘江", "血战湘江", "抢渡湘江"]):
+        special_boost["relic_006"] = 4
+
+    if any(x in q for x in ["赤水", "四渡赤水", "一渡赤水"]):
+        special_boost["relic_011"] = 4
+
+    if any(x in q for x in ["草地", "过草地", "松潘草地", "日记"]):
+        special_boost["relic_028"] = 4
+
+    if any(x in q for x in ["雪山", "夹金山", "防滑", "钉鞋"]):
+        special_boost["relic_025"] = 4
+
+    matches = []
+
+    for relic in catalog:
+        rid = relic.get("id", "")
+        title = str(relic.get("title", ""))
+        theme = str(relic.get("theme", ""))
+        keywords = [str(k).strip() for k in relic.get("keywords", []) if str(k).strip()]
+
+        score = 0.0
+        strong_hit = False
+
+        # 人工增强优先
+        if rid in special_boost:
+            score += special_boost[rid]
+            strong_hit = True
+
+        # 标题/主题在问题中出现，强相关
+        if title and title in q:
+            score += 6
+            strong_hit = True
+
+        if theme and theme in q:
+            score += 3
+            strong_hit = True
+
+        # 关键词：主要匹配用户问题
+        for kw in keywords:
+            if kw in q:
+                if kw in weak_terms:
+                    score += 0.25
+                else:
+                    score += 1.5
+                    strong_hit = True
+
+        # 回答文本只做弱参考，不能单独决定展示
+        for kw in keywords:
+            if kw not in weak_terms and kw in a:
+                score += 0.25
+
+        # 必须有强命中，或者人工增强；否则不展示
+        if strong_hit and score >= 1.5:
+            item = dict(relic)
+            item["match_score"] = score
+            matches.append(item)
+
+    matches.sort(key=lambda x: x.get("match_score", 0), reverse=True)
+    return matches[:top_k]
 
 KNOWLEDGE_BASE = load_kb()
 
@@ -140,6 +243,7 @@ def _safe_default_response(message: str, detail: str, context: str, citations: L
         "raw_evidence": context,
         "citations": citations,
         "evidence_snippets": evidence_snippets or [],
+        "relic_matches": [],
     }
 
 
@@ -181,6 +285,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
         else:
             evidence_note = "\n\n【史料提示】当前知识库没有检索到足够直接的站点片段，本段采用预设展线讲稿结构；后续可继续补充对应原始 PDF 资料。"
 
+        relic_matches = match_relics(user_query, station.voice + station.detail + context)
         return {
             "llm_data": {
                 "voice_script": station.voice,
@@ -190,6 +295,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             "raw_evidence": context,
             "citations": citations,
             "evidence_snippets": evidence_snippets,
+            "relic_matches": relic_matches,
             "guide_station": {
                 "title": station.title,
                 "date": station.date,
@@ -288,6 +394,10 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             detailed_text = response_text
 
         follow_ups = [q for q in [followup_1, followup_2] if q]
+        relic_matches = match_relics(
+            user_query,
+            voice_script + detailed_text + context
+        )
         return {
             "llm_data": {
                 "voice_script": voice_script,
@@ -297,6 +407,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             "raw_evidence": context,
             "citations": citations,
             "evidence_snippets": evidence_snippets,
+            "relic_matches": relic_matches,
         }
     except Exception as e:
         return _safe_default_response(
