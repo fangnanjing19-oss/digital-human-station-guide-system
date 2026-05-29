@@ -168,7 +168,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             "page": c.get("page", "?"),
             "score": c.get("score", 0),
             "hits": c.get("hits", []),
-            "content": (c.get("content", "") or "")[:520],
+            "content": (c.get("content", "") or "")[:1200],
         }
         for c in chunks[:4]
     ]
@@ -301,7 +301,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
     except Exception as e:
         return _safe_default_response(
             "孩子，通讯设备出了点故障，老红军暂时听不清你的话。",
-            f"系统通讯故障：{html.escape(str(e))}",
+            "系统通讯暂时繁忙，可能是模型服务正在过载。请稍后重新提问，老红军会继续为你讲述这段历史。",
             context,
             citations,
             evidence_snippets,
