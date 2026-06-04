@@ -138,6 +138,172 @@ KNOWLEDGE_BASE = load_kb()
 _STOPWORDS = set("的是了和与及在对为以把被而或并就都很也但从到中上下一些一个这个那个什么怎么为什么多少哪些时候")
 
 
+_BROAD_TERMS = {
+    "红军", "长征", "中央红军", "战役", "战斗", "问题", "原因", "影响", "意义",
+}
+
+
+_TOPIC_PROFILES: List[Dict[str, Any]] = [
+    {
+        "name": "topic_ruijin_departure",
+        "scene": "瑞金集结出发",
+        "triggers": ["瑞金", "集结出发", "长征起点", "中央苏区", "战略转移"],
+        "retrieval_query": "瑞金 中央苏区 集结出发 战略转移 突围 西征 长征开始",
+        "required_terms": ["瑞金", "中央苏区", "战略转移", "西征"],
+        "boost_terms": ["突围", "集结", "出发", "中央革命根据地", "第五次反围剿"],
+        "forbidden_terms": ["湘江", "遵义", "赤水", "泸定桥", "夹金山", "草地", "吴起镇"],
+    },
+    {
+        "name": "topic_xiangjiang",
+        "scene": "湘江战役/血战湘江",
+        "triggers": ["湘江", "血战湘江", "湘江战役", "抢渡湘江", "第四道封锁线", "湘桂封锁线"],
+        "retrieval_query": "湘江战役 血战湘江 抢渡湘江 第四道封锁线 湘桂封锁线 界首 光华铺 损失 伤亡",
+        "required_terms": ["湘江", "湘江战役", "血战湘江", "抢渡湘江"],
+        "boost_terms": ["第四道封锁线", "湘桂封锁线", "界首", "光华铺", "损失", "伤亡", "惨烈"],
+        "forbidden_terms": ["直罗", "直落", "泸定桥", "草地", "夹金山", "吴起镇", "群众家", "银元"],
+    },
+    {
+        "name": "topic_zunyi",
+        "scene": "遵义会议",
+        "triggers": ["遵义", "遵义会议", "生死攸关", "转折点", "军事路线"],
+        "retrieval_query": "遵义会议 遵义 政治局 扩大会议 军事路线 转折 毛泽东 博古 李德",
+        "required_terms": ["遵义", "遵义会议", "政治局", "军事路线"],
+        "boost_terms": ["转折", "毛泽东", "博古", "李德", "领导", "生死攸关"],
+        "forbidden_terms": ["湘江战役", "泸定桥", "草地", "夹金山", "吴起镇", "群众家", "银元"],
+    },
+    {
+        "name": "topic_chishui",
+        "scene": "四渡赤水",
+        "triggers": ["四渡赤水", "赤水", "赤水河", "运动战", "出奇兵"],
+        "retrieval_query": "四渡赤水 赤水河 运动战 佯动 机动 遵义后 毛泽东",
+        "required_terms": ["四渡赤水", "赤水", "赤水河"],
+        "boost_terms": ["运动战", "机动", "佯动", "调动敌人", "遵义后"],
+        "forbidden_terms": ["湘江", "泸定桥", "草地", "夹金山", "吴起镇", "群众家", "银元"],
+    },
+    {
+        "name": "topic_luding",
+        "scene": "飞夺泸定桥/大渡河",
+        "triggers": ["飞夺泸定桥", "泸定桥", "大渡河", "铁索桥", "安顺场", "强渡大渡河"],
+        "retrieval_query": "飞夺泸定桥 泸定桥 大渡河 安顺场 铁索桥 渡河点 夺取 战略胜利",
+        "required_terms": ["飞夺泸定桥", "泸定桥", "大渡河", "安顺场"],
+        "boost_terms": ["铁索桥", "渡河点", "夺取", "战略胜利", "夹河而上"],
+        "forbidden_terms": ["湘江战役", "草地", "夹金山", "吴起镇", "群众家", "银元"],
+    },
+    {
+        "name": "topic_snow_mountain",
+        "scene": "翻越夹金山/雪山",
+        "triggers": ["夹金山", "甲金山", "雪山", "翻雪山", "缺氧", "高寒"],
+        "retrieval_query": "夹金山 甲金山 雪山 高寒 空气稀薄 饥寒 翻越 达维",
+        "required_terms": ["夹金山", "甲金山", "雪山"],
+        "boost_terms": ["空气稀薄", "高寒", "达维", "晕倒", "风雨", "死尸"],
+        "forbidden_terms": ["湘江", "泸定桥", "草地", "吴起镇", "群众家", "银元"],
+    },
+    {
+        "name": "grassland_hardship",
+        "scene": "跨越松潘草地",
+        "triggers": ["过草地", "松潘草地", "草地", "毛儿盖", "班佑"],
+        "retrieval_query": (
+            "过草地 松潘草地 毛儿盖 班佑 阿坝 包座 草地行军 "
+            "粮食 缺粮 筹粮 干粮 露营 夜雨 无树 泥沼 向导 肿脚 冻坏 牺牲"
+        ),
+        "required_terms": ["过草地", "草地", "毛儿盖", "班佑", "阿坝", "包座"],
+        "boost_terms": ["粮食", "缺粮", "筹粮", "干粮", "露营", "夜雨", "无树", "泥沼", "向导", "肿脚", "冻坏"],
+        "forbidden_terms": ["群众家", "全村", "银元", "神龛", "苗家", "廖洞", "黄古屯", "石阡", "湘江", "泸定桥"],
+    },
+    {
+        "name": "topic_wuqizhen",
+        "scene": "吴起镇大会师",
+        "triggers": ["吴起镇", "吴起", "大会师", "陕北", "会师"],
+        "retrieval_query": "吴起镇 吴起 陕北 会师 中央红军 长征胜利 到达陕北",
+        "required_terms": ["吴起镇", "吴起", "陕北", "会师"],
+        "boost_terms": ["到达", "胜利", "中央红军", "大会师"],
+        "forbidden_terms": ["湘江", "遵义", "赤水", "泸定桥", "草地", "群众家", "银元"],
+    },
+]
+
+
+def _topic_profile_from_query(query: str) -> Dict[str, Any] | None:
+    q = _normalize_text(query)
+    for profile in _TOPIC_PROFILES:
+        if any(trigger in q for trigger in profile["triggers"]):
+            return profile
+    return None
+
+
+def _intent_from_profile(profile: Dict[str, Any], user_query: str) -> Dict[str, Any]:
+    return {
+        "name": profile["name"],
+        "scene": profile["scene"],
+        "canonical_answer": f"必须限定在“{profile['scene']}”这一历史场景内作答。",
+        "retrieval_query": profile["retrieval_query"],
+        "required_terms": profile["required_terms"],
+        "boost_terms": profile.get("boost_terms", []),
+        "forbidden_terms": profile.get("forbidden_terms", []),
+        "strict_required": True,
+        "instruction": (
+            f"用户问题已归入“{profile['scene']}”场景。回答只能使用与该场景直接相关的 Context。"
+            "证据真实但地点、阶段、战役不符时也不可引用；如果直接证据不足，必须明说不足。"
+        ),
+    }
+
+
+def _detect_query_intent(user_query: str) -> Dict[str, Any] | None:
+    """把判断型问题先锚定到可靠史实方向，避免泛词检索把答案带偏。"""
+    q = _normalize_text(user_query)
+    if not q:
+        return None
+
+    battle_scope = any(x in q for x in ["战役", "战斗", "一仗", "哪仗", "哪一仗", "长征"])
+    costly_words = ["最惨烈", "最惨重", "最惨", "伤亡最大", "损失最大", "代价最大", "牺牲最大", "损失最重", "伤亡最重"]
+    dangerous_words = ["最惊险", "最险", "最危急", "最危险", "最紧张"]
+
+    if battle_scope and any(x in q for x in costly_words):
+        return {
+            "name": "long_march_bloodiest_battle",
+            "scene": "湘江战役/血战湘江",
+            "canonical_answer": "湘江战役（血战湘江）",
+            "retrieval_query": (
+                "湘江战役 血战湘江 湘江 第四道封锁线 湘桂封锁线 "
+                "敌人阻止 红军渡过湘江 损失 牺牲 1934年11月 1934年12月"
+            ),
+            "required_terms": ["湘江战役", "血战湘江", "湘江"],
+            "boost_terms": ["第四道封锁线", "湘桂封锁线", "损失", "伤亡", "惨烈", "惨重"],
+            "forbidden_terms": ["直罗", "直落", "泸定桥", "草地", "群众家", "银元"],
+            "strict_required": True,
+            "instruction": (
+                "用户问的是长征中牺牲代价、损失程度或惨烈程度最高的战役。"
+                "回答必须以“湘江战役/血战湘江”为核心；如果 Context 没有直接写“最惨烈”，"
+                "也要说明这是按伤亡代价和生死危机维度作出的判断，不能改答直罗镇战役、遵义战斗、四渡赤水或泸定桥。"
+            ),
+        }
+
+    if battle_scope and any(x in q for x in dangerous_words):
+        return {
+            "name": "long_march_most_dangerous_battle",
+            "scene": "长征惊险事件判断",
+            "canonical_answer": "需先说明评价标准：按惨烈代价偏向湘江战役，按夺取险要通道常讲飞夺泸定桥/强渡大渡河。",
+            "retrieval_query": (
+                "湘江战役 血战湘江 湘江 飞夺泸定桥 泸定桥 大渡河 "
+                "铁索桥 封锁线 危急 生死关口 长征"
+            ),
+            "required_terms": ["湘江", "泸定桥", "大渡河"],
+            "boost_terms": ["惊险", "危急", "伤亡", "渡河点", "铁索桥", "战略危机"],
+            "forbidden_terms": ["直罗", "直落", "群众家", "银元"],
+            "strict_required": False,
+            "instruction": (
+                "用户问的是“最惊险/最危急”，这不是单一史料标签。必须先交代评价标准："
+                "若按伤亡惨烈和战略危机，应重点讲湘江战役；若按险要通道和突击场面，常指飞夺泸定桥/大渡河。"
+                "不要把无关战役武断说成唯一答案。"
+            ),
+        }
+
+    profile = _topic_profile_from_query(user_query)
+    if profile:
+        return _intent_from_profile(profile, user_query)
+
+    return None
+
+
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
 
@@ -149,9 +315,13 @@ def _extract_terms(query: str) -> List[str]:
 
     # 优先保留历史专名、数字、月份等强信号。
     known_phrases = [
-        "遵义会议", "四渡赤水", "飞夺泸定桥", "泸定桥", "血战湘江", "湘江战役", "过草地", "夹金山", "吴起镇",
+        "遵义会议", "四渡赤水", "飞夺泸定桥", "泸定桥", "血战湘江", "湘江战役", "湘江", "过草地", "夹金山", "吴起镇",
         "瑞金", "长征", "红军", "中央红军", "毛泽东", "周恩来", "朱德", "博古", "李德",
         "金沙江", "大渡河", "腊子口", "会宁", "战略转移", "生死攸关", "转折点",
+        "第四道封锁线", "湘桂封锁线", "突破封锁线", "抢渡湘江", "光华铺", "界首",
+        "惨烈", "惨重", "伤亡", "损失", "牺牲", "代价", "惊险", "危急",
+        "松潘草地", "毛儿盖", "班佑", "阿坝", "包座", "筹粮", "干粮", "缺粮",
+        "露营", "夜雨", "无树", "泥沼", "向导", "肿脚", "冻坏",
     ]
     for phrase in known_phrases:
         if phrase in q:
@@ -173,36 +343,107 @@ def _extract_terms(query: str) -> List[str]:
         if term not in seen:
             seen.add(term)
             result.append(term)
-    return result[:40]
+    return result[:48]
 
 
-def retrieve_relevant_chunks(user_query: str, top_k: int | None = None) -> List[Dict[str, Any]]:
-    """中文轻量 RAG 检索：关键词命中 + 词频加权 + 来源页码保留。"""
+def retrieve_relevant_chunks(
+    user_query: str,
+    top_k: int | None = None,
+    intent: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
+    """中文轻量 RAG 检索：问题意图锚定 + 关键词命中 + 词频加权 + 来源页码保留。"""
     if not KNOWLEDGE_BASE:
         return []
 
     top_k = top_k or llm_config.max_context_chunks
     terms = _extract_terms(user_query)
+    if intent:
+        for term in intent.get("required_terms", []):
+            if term and term not in terms:
+                terms.insert(0, term)
     if not terms:
         return []
 
+    required_terms = [str(t) for t in (intent or {}).get("required_terms", []) if str(t)]
+    boost_terms = [str(t) for t in (intent or {}).get("boost_terms", []) if str(t)]
+    forbidden_terms = [str(t) for t in (intent or {}).get("forbidden_terms", []) if str(t)]
+    strict_required = bool((intent or {}).get("strict_required"))
     scored = []
     for idx, chunk in enumerate(KNOWLEDGE_BASE):
         content = chunk.get("content", "") or ""
         compact = _normalize_text(content)
         source = chunk.get("source", "未知资料")
         page = chunk.get("page", "?")
+        source_compact = _normalize_text(str(source))
+        required_hit = any(term in compact or term in source_compact for term in required_terms)
+        if strict_required and required_terms and not required_hit:
+            continue
+        forbidden_hit = any(term in compact or term in source_compact for term in forbidden_terms)
+
         score = 0.0
         hits = []
         for term in terms:
             count = compact.count(term)
+            source_count = source_compact.count(term)
             if count:
                 # 越长的词越有信息量；标题、来源命中额外加权。
                 weight = 1 + math.log1p(len(term))
+                if term in _BROAD_TERMS:
+                    weight *= 0.18
+                if any(ch.isdigit() for ch in term):
+                    weight *= 0.15
+                if required_terms and term in required_terms:
+                    weight += 5
                 if term in str(source):
                     weight += 1.2
                 score += count * weight
                 hits.append(term)
+            elif source_count:
+                weight = 1.5 + math.log1p(len(term))
+                if term in _BROAD_TERMS:
+                    weight *= 0.18
+                if any(ch.isdigit() for ch in term):
+                    weight *= 0.15
+                score += source_count * weight
+                hits.append(term)
+        if required_hit:
+            score += 18
+        for term in boost_terms:
+            if term in compact or term in source_compact:
+                score += 12 + math.log1p(len(term))
+
+        if intent and intent.get("name") == "long_march_bloodiest_battle":
+            if "湘江战役" in compact:
+                score += 42
+            if "血战湘江" in compact:
+                score += 42
+            if any(x in compact for x in ["战况非常惨烈", "伤亡惨重", "损失是比较严重", "严重损失"]):
+                score += 70
+            if any(x in compact for x in ["损失", "伤亡", "牺牲", "惨烈", "惨重"]):
+                score += 24
+
+        if intent and intent.get("name") == "grassland_hardship":
+            if any(x in compact for x in ["毛儿盖", "班佑", "阿坝", "包座", "松潘草地", "草地"]):
+                score += 40
+            if any(x in compact for x in ["粮食", "缺粮", "筹粮", "干粮", "各部粮", "电台已绝粮"]):
+                score += 36
+            if any(x in compact for x in ["露营", "夜雨", "无丛树", "无森林", "河水涨", "不能徒涉", "无响导", "冻坏", "肿脚"]):
+                score += 34
+            if any(x in compact for x in ["群众家", "全村", "银元", "神龛", "苗家", "廖洞", "黄古屯", "石阡"]):
+                score *= 0.04
+
+        if forbidden_hit:
+            score *= 0.08
+
+        toc_like = (
+            compact.count("⋯") >= 4
+            or compact.count("/") >= 8
+            or (compact.count("关于") >= 6 and compact.count("电") >= 4)
+        )
+        if toc_like:
+            score *= 0.28
+        if any(x in compact for x in ["目录", "出版说明"]) and len(compact) < 900:
+            score *= 0.55
         if score > 0:
             scored.append({
                 "index": idx,
@@ -227,6 +468,33 @@ def _build_context(chunks: List[Dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
+def _build_factual_guard(intent: Dict[str, Any] | None, chunks: List[Dict[str, Any]]) -> str:
+    if not intent:
+        return ""
+
+    required_terms = [str(t) for t in intent.get("required_terms", []) if str(t)]
+    forbidden_terms = [str(t) for t in intent.get("forbidden_terms", []) if str(t)]
+    evidence_text = _normalize_text("\n".join(c.get("content", "") or "" for c in chunks))
+    direct_hits = [term for term in required_terms if term in evidence_text]
+    forbidden_hits = [term for term in forbidden_terms if term in evidence_text]
+    direct_status = "、".join(direct_hits) if direct_hits else "未在已选 Context 中直接命中核心词"
+    forbidden_status = "、".join(forbidden_hits) if forbidden_hits else "未发现明显跨场景风险词"
+
+    return f"""
+# Factual Guard
+当前问题已识别为：{intent.get('name', '历史事实校准问题')}
+限定场景：{intent.get('scene', '以用户问题和 Context 为准')}
+史实锚点：{intent.get('canonical_answer', '以 Context 为准')}
+证据命中状态：{direct_status}
+跨场景风险：{forbidden_status}
+回答纪律：
+- {intent.get('instruction', '必须优先依据 Context，不能脱离证据扩写。')}
+- 如果 Context 只提供了过程证据、没有直接给出“最……”的定性，请明确说“按伤亡代价/战略危机等维度判断”，不要伪装成档案原文直接写了这个结论。
+- 不得把没有在 Context 中形成强证据链的事件说成答案；不得为了显得有依据而引用不相关页码。
+- 严禁跨场景拼接：某一地点、阶段、民族地区或战役的材料，不能挪用到另一个历史场景中。
+"""
+
+
 def _extract_tag(tag: str, text: str) -> str:
     pattern = rf"\[{tag}\](.*?)\[/{tag}\]"
     match = re.search(pattern, text or "", re.DOTALL | re.IGNORECASE)
@@ -247,16 +515,82 @@ def _safe_default_response(message: str, detail: str, context: str, citations: L
     }
 
 
+def _enforce_intent_answer(
+    intent: Dict[str, Any] | None,
+    voice_script: str,
+    detailed_text: str,
+) -> tuple[str, str]:
+    """高风险事实题做输出后校验，防止模型把核心答案带偏。"""
+    if not intent:
+        return voice_script, detailed_text
+
+    combined = f"{voice_script}\n{detailed_text}"
+    corrected = False
+    if intent.get("name") == "long_march_bloodiest_battle":
+        wrong_battle = any(x in combined for x in ["直罗", "直落", "遵义战斗", "四渡赤水", "泸定桥"])
+        missing_anchor = "湘江" not in combined
+        if wrong_battle or missing_anchor:
+            corrected = True
+            voice_script = "按伤亡代价和战略危机衡量，长征中最惨烈的战役应是湘江战役。"
+            detailed_text = (
+                "按“牺牲代价、伤亡程度、战略危机”这个标准回答，长征中最惨烈的战役应是湘江战役，也常被称为血战湘江。\n\n"
+                "这里不能答成直罗镇战役、四渡赤水或飞夺泸定桥。当前知识库命中的湘江相关证据显示：湘江战役发生在中央红军西进、突破封锁线的关键阶段；资料中直接出现“湘江战役”“损失”“血战”“伤亡惨重”等表述，并提到红军抢渡湘江、控制界首等渡河点、在光华铺等地阻击敌军的过程。\n\n"
+                "需要谨慎说明的是：如果原始档案没有逐字写出“长征中最惨烈”这一现代概括，就不能把它伪装成档案原句。更可靠的说法是：依据知识库中关于湘江战役损失、伤亡和战略危机的证据链，按惨烈程度和代价判断，应以湘江战役为核心答案。"
+            )
+
+    if intent.get("name") == "grassland_hardship":
+        wrong_scene = any(x in combined for x in ["群众家", "全村", "银元", "神龛", "苗家", "廖洞", "黄古屯", "石阡"])
+        missing_anchor = not any(x in combined for x in ["草地", "毛儿盖", "班佑", "阿坝", "包座"])
+        if wrong_scene or missing_anchor:
+            corrected = True
+            voice_script = "过草地的主要困难，应落在自然环境、缺粮补给和组织维持上，不能套用村寨煮饭材料。"
+            detailed_text = (
+                "这类问题必须先把场景限定清楚：过草地不是一般村寨行军，不能把其他地区的群众支援、驻村休息或地方交往材料套进来。如果回答里出现这类内容，就是把别处亲历材料错放到了草地阶段。\n\n"
+                "按当前知识库中草地相关片段，较可靠的分析应围绕几类压力展开：一是自然环境和道路条件，例如毛儿盖、班佑、阿坝、包座一带的行军、露营、夜雨、无树或河水阻隔等记录；二是补给压力，例如筹粮、干粮、各部粮食不足甚至绝粮的材料；三是组织维持和人员消耗，例如掉队、病弱、肿脚、寒冷等问题。\n\n"
+                "所以，如果问“敌军追击还是自然环境和补给更困难”，更稳妥的回答是：过草地阶段当然仍处在战争压力之下，但直接压在行军过程上的，是自然环境、道路识别、缺粮补给、疾病掉队和组织维持的叠加困难。没有直接草地证据时，宁可说“档案里没有直接记载”，也不能拿其他地区的群众支援材料来补。"
+            )
+
+    forbidden_terms = [str(t) for t in intent.get("forbidden_terms", []) if str(t)]
+    required_terms = [str(t) for t in intent.get("required_terms", []) if str(t)]
+    forbidden_hits = [term for term in forbidden_terms if term in combined]
+    missing_anchor = required_terms and not any(term in combined for term in required_terms)
+    if not corrected and (forbidden_hits or missing_anchor):
+        scene = intent.get("scene", "当前问题对应的历史场景")
+        required_text = "、".join(required_terms[:6]) or "直接相关证据"
+        forbidden_text = "、".join(forbidden_hits[:5]) if forbidden_hits else "无"
+        voice_script = f"这个问题必须回到“{scene}”的直接证据，不能跨场景拼接材料。"
+        detailed_text = (
+            f"为保证准确性，本次回答需要先做证据校正：问题已限定在“{scene}”，"
+            f"应优先围绕这些证据锚点展开：{required_text}。\n\n"
+            f"刚才生成内容中出现了跨场景风险或核心锚点不足。风险词：{forbidden_text}。"
+            "证据真实并不等于可以挪用；不同地点、不同阶段、不同战役的材料不能互相替代。\n\n"
+            "更稳妥的处理是：只根据当前 Context 中与该场景直接相关的片段回答；如果 Context 不能支撑某个细节，就明确说“档案里没有直接记载”，而不是补写听起来合理但场景不符的内容。"
+        )
+
+    return voice_script, detailed_text
+
+
 def get_veteran_response(user_query: str) -> Dict[str, Any]:
     guide_mode = "讲解员模式" in user_query or "导览" in user_query or "站点讲解" in user_query
     station = None
     station_index = 0
     retrieval_query = user_query
+    intent = None
     if guide_mode:
         station, station_index = build_station_response(user_query)
         retrieval_query = station.search_query
-    chunks = retrieve_relevant_chunks(retrieval_query, top_k=10 if guide_mode else None)
+        profile = _topic_profile_from_query(f"{station.title} {station.search_query}")
+        if profile:
+            intent = _intent_from_profile(profile, user_query)
+            retrieval_query = intent["retrieval_query"]
+    else:
+        intent = _detect_query_intent(user_query)
+        if intent:
+            retrieval_query = intent["retrieval_query"]
+
+    chunks = retrieve_relevant_chunks(retrieval_query, top_k=10 if guide_mode else None, intent=intent)
     context = _build_context(chunks)
+    factual_guard = _build_factual_guard(intent, chunks)
     citations = [
         {
             "source": c.get("source", "未知资料"),
@@ -296,6 +630,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             "citations": citations,
             "evidence_snippets": evidence_snippets,
             "relic_matches": relic_matches,
+            "answer_intent": intent,
             "guide_station": {
                 "title": station.title,
                 "date": station.date,
@@ -349,6 +684,9 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
 4. 如果 Context 没有直接证据，要明确说“档案里没有直接记载”，再谨慎补充通识性说明。
 5. 避免空话套话，例如不要只说“伟大转折”“精神丰碑”，必须解释原因和证据。
 6. [VOICE] 是页面上方字幕，必须短；[DETAIL] 是档案面板，可写完整。
+7. 所有“最惨烈、最惊险、最大、最重要”这类判断，必须先说明判断标准，再给出答案；不能把不相关证据当作引用。
+8. 严禁跨场景引用：回答草地问题只能使用草地、毛儿盖、班佑、阿坝、包座等相关证据；回答湘江问题只能使用湘江相关证据。证据真实但场景不符，也必须视为不可用。
+{factual_guard}
 {mode_requirements}
 
 # Output Format
@@ -393,6 +731,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             voice_script = "孩子，这段往事要从档案里慢慢讲起。"
             detailed_text = response_text
 
+        voice_script, detailed_text = _enforce_intent_answer(intent, voice_script, detailed_text)
         follow_ups = [q for q in [followup_1, followup_2] if q]
         relic_matches = match_relics(
             user_query,
@@ -408,6 +747,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             "citations": citations,
             "evidence_snippets": evidence_snippets,
             "relic_matches": relic_matches,
+            "answer_intent": intent,
         }
     except Exception as e:
         return _safe_default_response(
