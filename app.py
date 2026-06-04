@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 from streamlit_mic_recorder import mic_recorder
 
 from brain import get_veteran_response, KNOWLEDGE_BASE
-from guide_content import STATION_GUIDES
+from guide_content import DISCOVERY_TIMELINE, STATION_GUIDES
 from stt import speech_to_text
 from voice import speak
 
@@ -112,6 +112,20 @@ def station_by_index(index: int) -> dict:
 
 def station_prompt_by_index(index: int) -> str:
     return station_guide_prompt(station_by_index(index)["title"])
+
+
+def normalize_followups(follow_ups) -> list[dict]:
+    normalized = []
+    for item in follow_ups or []:
+        if isinstance(item, dict):
+            question = str(item.get("question") or item.get("label") or "").strip()
+            follow_type = str(item.get("type") or "继续追问").strip()
+        else:
+            question = str(item or "").strip()
+            follow_type = "继续追问"
+        if question:
+            normalized.append({"type": follow_type, "question": question})
+    return normalized
 
 
 def latest_user_query() -> str:
@@ -319,6 +333,8 @@ def handle_response(user_query: str):
             audio_path = speak(voice_script) if voice_script else None
         except Exception:
             audio_path = None
+        full_response["audio_path"] = audio_path
+        full_response["audio_text"] = voice_script
         st.session_state.last_audio_path = audio_path
         st.session_state.messages.append({"role": "user", "content": user_query})
         st.session_state.messages.append({"role": "assistant", "data": full_response})
@@ -647,6 +663,7 @@ st.markdown(f"""
         position: fixed; top: 50%; left: 7%; transform: translateY(-50%); width: 270px;
         color: #d4af37; font-family: "KaiTi", "STKaiti", serif; z-index: 10;
         border-left: 2px solid rgba(212,175,55,0.4); padding-left: 18px;
+        max-height: 78vh; overflow-y: auto; padding-right: 6px;
     }}
     .timeline-item {{ display:block; margin-bottom: 20px; position: relative; cursor: pointer; text-decoration: none !important; color: inherit !important; }}
     .timeline-item::before {{
@@ -658,6 +675,38 @@ st.markdown(f"""
     .timeline-item:hover::before {{ background: #d4af37; box-shadow: 0 0 15px #d4af37; }}
     .timeline-item:hover .timeline-date {{ color: rgba(212,175,55,0.8); }}
     .timeline-item:hover .timeline-event {{ color: #fff; transform: translateX(5px); }}
+    .timeline-node {{
+        position: relative; margin-bottom: 13px; color: inherit;
+    }}
+    .timeline-node::before {{
+        content: ''; position: absolute; left: -26px; top: 9px; width: 10px; height: 10px; background: #8b0000;
+        border: 2px solid #d4af37; border-radius: 50%; box-shadow: 0 0 10px rgba(212,175,55,0.8);
+    }}
+    .timeline-node[open]::before {{ background:#d4af37; box-shadow:0 0 15px #d4af37; }}
+    .timeline-node summary {{
+        list-style: none; cursor: pointer; display: block; padding-right: 4px; outline: none;
+    }}
+    .timeline-node summary::-webkit-details-marker {{ display: none; }}
+    .timeline-node summary::after {{
+        content: '+'; float: right; margin-top: -20px; font-size: 15px; color: rgba(212,175,55,0.75);
+    }}
+    .timeline-node[open] summary::after {{ content: '-'; }}
+    .timeline-node:hover .timeline-event, .timeline-node[open] .timeline-event {{ color:#fff; transform: translateX(5px); }}
+    .timeline-desc {{
+        margin: 4px 0 7px; color: rgba(255,255,255,0.48); font-size: 11px; line-height: 1.45; font-family: sans-serif;
+    }}
+    .timeline-main-link {{
+        display: inline-block; margin: 0 0 7px; color: rgba(212,175,55,0.82) !important; text-decoration:none !important;
+        font-size: 12px; font-family: sans-serif; border-bottom: 1px solid rgba(212,175,55,0.28);
+    }}
+    .timeline-children {{ display: flex; flex-wrap: wrap; gap: 6px; padding: 1px 0 1px 0; }}
+    .timeline-child {{
+        display: inline-flex; align-items:center; max-width: 100%; padding: 4px 8px; border-radius: 999px;
+        border: 1px solid rgba(212,175,55,0.22); background: rgba(30,5,5,0.55);
+        color: rgba(212,175,55,0.88) !important; text-decoration: none !important;
+        font-size: 11px; line-height: 1.25; font-family: sans-serif;
+    }}
+    .timeline-child:hover {{ background: rgba(212,175,55,0.13); color:#fff !important; }}
 
     .right-info-panel {{
         position: fixed; top: 50%; right: 7%; transform: translateY(-50%); width: clamp(350px, 20vw, 390px); z-index: 10;
@@ -677,11 +726,24 @@ st.markdown(f"""
         padding: 7px 0; transition: all .3s ease;
     }}
     .right-question:hover {{ color:#fff !important; transform: translateX(5px); }}
-    .followup-row {{ margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }}
+    .followup-row {{
+        margin-top: 12px; display: flex; flex-direction: column; gap: 12px;
+    }}
+    .followup-type-row {{
+        display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: start;
+    }}
+    .followup-question-list {{ display:flex; flex-wrap: wrap; gap: 8px 10px; min-width: 0; }}
+    .followup-group {{ min-width: min(360px, 100%); flex: 1 1 360px; display:flex; align-items:flex-start; }}
+    .followup-type {{
+        flex: 0 0 auto;
+        display: inline-flex; align-items:center; min-height: 28px; padding: 5px 9px; border-radius: 999px;
+        border: 1px solid rgba(212,175,55,0.18); color: rgba(255,255,255,0.72);
+        background: rgba(255,255,255,0.04); font-size: 12px; line-height: 1.2;
+    }}
     .followup-link {{
-        display: inline-block; padding: 7px 11px; border: 1px solid rgba(212,175,55,0.26); border-radius: 999px;
+        flex: 1 1 auto; min-width: 0; display: inline-block; padding: 7px 11px; border: 1px solid rgba(212,175,55,0.26); border-radius: 999px;
         color: #d4af37 !important; text-decoration: none !important; background: rgba(212,175,55,0.06);
-        font-size: 13px; line-height: 1.45;
+        font-size: 13px; line-height: 1.45; overflow-wrap: anywhere;
     }}
     .followup-link:hover {{ background: rgba(212,175,55,0.15); color: #fff !important; }}
     .source-line {{ margin-bottom: 6px; color: #cfcfcf; font-size: 13px; line-height: 1.65; }}
@@ -796,10 +858,14 @@ st.markdown(f"""
         .left-timeline {{ border-left: 0; border-top: 1px solid rgba(212,175,55,0.34); padding: 14px 0 0; }}
         .timeline-item {{ margin-bottom: 14px; padding-left: 18px; }}
         .timeline-item::before {{ left: 0; top: 7px; }}
+        .timeline-node {{ padding-left: 18px; }}
+        .timeline-node::before {{ left: 0; top: 7px; }}
         .subtitle-overlay {{ text-align: left; font-size: 20px; pointer-events: auto; }}
         .archive-panel {{ padding: 22px 18px; font-size: 16px; }}
         .command-bar {{ align-items: flex-start; flex-direction: column; }}
         .command-actions {{ justify-content: flex-start; }}
+        .followup-type-row {{ grid-template-columns: 1fr; gap: 7px; }}
+        .followup-group {{ flex-basis: 100%; }}
         .status-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
         .station-nav {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
         .relic-grid {{ grid-template-columns: 1fr; }}
@@ -1050,23 +1116,42 @@ if st.session_state.messages:
             raw = safe_text(res.get("raw_evidence", "本次没有检索到可展示的原始史料片段。"))
             evidence_html = f"<div class='evidence-card'>{raw}</div>"
 
-        follow_ups = llm_data.get("follow_ups", [])
+        follow_ups = normalize_followups(llm_data.get("follow_ups", []))
         followup_html = ""
         if follow_ups:
-            links = []
+            grouped_followups = {}
+            ordered_types = []
             followup_station_title = str(active_guide_station.get("title") or "")
-            for follow_up in follow_ups[:2]:
-                is_next_station = str(follow_up).startswith("讲解员模式：站点讲解")
-                label = "继续下一站" if is_next_station else "追问：" + str(follow_up)
-                links.append(
-                    make_action_link(
-                        label,
-                        str(follow_up),
-                        station_title=None if is_next_station else followup_station_title,
-                        css_class="followup-link",
+            for item in follow_ups[:8]:
+                follow_type = str(item["type"])
+                if follow_type not in grouped_followups:
+                    grouped_followups[follow_type] = []
+                    ordered_types.append(follow_type)
+                grouped_followups[follow_type].append(str(item["question"]))
+
+            rows = []
+            for follow_type in ordered_types:
+                links = []
+                for question in grouped_followups[follow_type]:
+                    is_next_station = question.startswith("讲解员模式：站点讲解")
+                    label_text = "继续下一站" if is_next_station else question
+                    links.append(
+                        "<div class='followup-group'>"
+                        + make_action_link(
+                            label_text,
+                            question,
+                            station_title=None if is_next_station else followup_station_title,
+                            css_class="followup-link",
+                        )
+                        + "</div>"
                     )
+                rows.append(
+                    "<div class='followup-type-row'>"
+                    f"<span class='followup-type'>{safe_text(follow_type)}</span>"
+                    f"<div class='followup-question-list'>{''.join(links)}</div>"
+                    "</div>"
                 )
-            followup_html = "<div class='archive-header'>💬 推荐追问</div><div class='followup-row'>" + "".join(links) + "</div><br>"
+            followup_html = "<div class='archive-header'>💬 知识发现式追问</div><div class='followup-row'>" + "".join(rows) + "</div><br>"
 
         detail_html = safe_text(llm_data.get('detailed_text', ''))
         archive_html = (
@@ -1094,25 +1179,45 @@ if st.session_state.messages:
         st.markdown(archive_html, unsafe_allow_html=True)
         render_copy_binder()
 
-        audio_path = st.session_state.get("last_audio_path") or "speech.mp3"
+        current_voice_script = str(llm_data.get("voice_script", "") or "")
+        audio_path = res.get("audio_path")
+        audio_text = str(res.get("audio_text", "") or "")
+        if current_voice_script and (not audio_path or audio_text != current_voice_script or not os.path.exists(str(audio_path))):
+            try:
+                audio_path = speak(current_voice_script)
+                res["audio_path"] = audio_path
+                res["audio_text"] = current_voice_script
+                st.session_state.last_audio_path = audio_path
+            except Exception:
+                audio_path = None
         if audio_path and os.path.exists(audio_path):
             st.audio(audio_path, format="audio/mp3", autoplay=True)
 else:
-    timeline_items = [
-        ("1934年10月", "瑞金集结出发", "红军为什么要从瑞金出发开始长征？"),
-        ("1934年11月", "血战湘江", "血战湘江为什么这么惨烈？"),
-        ("1935年01月", "遵义会议召开", "遵义会议最大的意义是什么？"),
-        ("1935年03月", "四渡赤水出奇兵", "四渡赤水为什么被称为运动战典范？"),
-        ("1935年05月", "飞夺泸定桥", "飞夺泸定桥到底有多惨烈？"),
-        ("1935年06月", "翻越夹金山", "红军翻越夹金山面临哪些困难？"),
-        ("1935年08月", "跨越松潘草地", "红军过草地时都吃些什么？"),
-        ("1935年10月", "吴起镇大会师", "吴起镇会师对长征意味着什么？"),
-    ]
-    timeline_html = "".join(
-        f"<a class='timeline-item' href='?q={quote(question)}' target='_self'>"
-        f"<div class='timeline-date'>{html.escape(date)}</div><div class='timeline-event'>{html.escape(event)}</div></a>"
-        for date, event, question in timeline_items
-    )
+    timeline_blocks = []
+    for idx, item in enumerate(DISCOVERY_TIMELINE):
+        children_html = "".join(
+            make_action_link(
+                str(child.get("label", "知识点")),
+                str(child.get("question", "")),
+                css_class="timeline-child",
+            )
+            for child in item.get("children", [])
+            if child.get("question")
+        )
+        main_question = str(item.get("question") or f"{item.get('title', '这一站')}有什么历史意义？")
+        open_attr = " open" if idx in (2,) else ""
+        timeline_blocks.append(
+            f"<details class='timeline-node'{open_attr}>"
+            f"<summary>"
+            f"<div class='timeline-date'>{safe_text(item.get('date', ''))}</div>"
+            f"<div class='timeline-event'>{safe_text(item.get('title', ''))}</div>"
+            f"</summary>"
+            f"<div class='timeline-desc'>{safe_text(item.get('description', ''))}</div>"
+            f"{make_action_link('讲解本站', main_question, css_class='timeline-main-link')}"
+            f"<div class='timeline-children'>{children_html}</div>"
+            f"</details>"
+        )
+    timeline_html = "".join(timeline_blocks)
 
     mode_label = "讲解员模式" if st.session_state.guide_mode else "问答模式"
     panel_html = f"""
