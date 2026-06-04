@@ -506,13 +506,116 @@ def _safe_default_response(message: str, detail: str, context: str, citations: L
         "llm_data": {
             "voice_script": message,
             "detailed_text": detail,
-            "follow_ups": [],
+            "follow_ups": _build_discovery_followups("", message, detail, [], [], citations, None),
         },
         "raw_evidence": context,
         "citations": citations,
         "evidence_snippets": evidence_snippets or [],
         "relic_matches": [],
     }
+
+
+def _followup_event_label(user_query: str, answer_text: str, intent: Dict[str, Any] | None) -> str:
+    combined = f"{user_query}\n{answer_text}"
+    if intent and intent.get("scene"):
+        return str(intent["scene"])
+    event_markers = [
+        ("遵义", "遵义会议"),
+        ("赤水", "四渡赤水"),
+        ("泸定桥", "飞夺泸定桥"),
+        ("大渡河", "大渡河与泸定桥"),
+        ("草地", "跨越松潘草地"),
+        ("毛儿盖", "跨越松潘草地"),
+        ("班佑", "跨越松潘草地"),
+        ("夹金山", "翻越夹金山"),
+        ("雪山", "翻越夹金山"),
+        ("湘江", "湘江战役"),
+        ("瑞金", "瑞金集结出发"),
+        ("吴起", "吴起镇大会师"),
+        ("陕北", "吴起镇大会师"),
+    ]
+    for marker, label in event_markers:
+        if marker in combined:
+            return label
+    return "本段长征史实"
+
+
+def _build_discovery_followups(
+    user_query: str,
+    voice_script: str,
+    detailed_text: str,
+    raw_followups: List[str],
+    relic_matches: List[Dict[str, Any]],
+    citations: List[Dict[str, Any]],
+    intent: Dict[str, Any] | None,
+) -> List[Dict[str, str]]:
+    """生成稳定的三类知识发现追问；LLM 给的问题只作为补充素材。"""
+    answer_text = f"{voice_script}\n{detailed_text}"
+    event = _followup_event_label(user_query, answer_text, intent)
+
+    basic_map = {
+        "湘江战役/血战湘江": ["为什么说湘江战役是长征初期最沉重的生死关口？", "湘江战役和遵义会议之间有什么因果关系？"],
+        "湘江战役": ["为什么说湘江战役是长征初期最沉重的生死关口？", "湘江战役和遵义会议之间有什么因果关系？"],
+        "遵义会议": ["遵义会议主要解决了哪些军事路线和组织领导问题？", "为什么说遵义会议是长征中的关键转折？"],
+        "四渡赤水": ["四渡赤水为什么不能简单理解为红军渡了四次河？", "四渡赤水怎样体现红军从被动转向主动？"],
+        "飞夺泸定桥/大渡河": ["飞夺泸定桥为什么关系到红军能否继续北上？", "强渡大渡河和飞夺泸定桥分别解决了什么问题？"],
+        "大渡河与泸定桥": ["大渡河和泸定桥为什么关系到红军能否继续北上？", "强渡大渡河和飞夺泸定桥分别解决了什么问题？"],
+        "翻越夹金山/雪山": ["红军翻越夹金山时最大的困难是什么？", "为什么说雪山考验的是行军组织而不只是个人意志？"],
+        "跨越松潘草地": ["红军过草地最核心的困难是什么？", "为什么说草地的危险不同于普通战斗？"],
+        "瑞金集结出发": ["为什么说瑞金出发是一次被迫的战略转移？", "长征出发时红军为什么必须带着机关和辎重一起行动？"],
+        "吴起镇大会师": ["吴起镇大会师为什么标志着长征打开了新局面？", "中央红军到达陕北为什么不只是走到终点？"],
+    }
+    detail_map = {
+        "湘江战役/血战湘江": ["湘江战役中界首、光华铺等渡河点为什么如此关键？", "红三十四师等后卫部队在湘江战役中承担了什么任务？"],
+        "湘江战役": ["湘江战役中界首、光华铺等渡河点为什么如此关键？", "红三十四师等后卫部队在湘江战役中承担了什么任务？"],
+        "遵义会议": ["遵义会议前的通道会议、黎平会议和猴场会议各自解决了什么问题？", "遵义会议后军事指挥和组织分工有哪些逐步变化？"],
+        "四渡赤水": ["四渡赤水中红军怎样通过佯动和转向调动敌军？", "四渡赤水与巧渡金沙江之间有什么战略衔接？"],
+        "飞夺泸定桥/大渡河": ["安顺场、泸定桥和大渡河渡河点之间是什么关系？", "泸定桥的通道价值为什么比战斗场面本身更关键？"],
+        "大渡河与泸定桥": ["安顺场、泸定桥和大渡河渡河点之间是什么关系？", "泸定桥的通道价值为什么比战斗场面本身更关键？"],
+        "翻越夹金山/雪山": ["夹金山的高寒、缺氧和装备不足怎样影响行军组织？", "翻越夹金山时伤病员和掉队风险如何被放大？"],
+        "跨越松潘草地": ["过草地时缺粮、疾病、掉队和泥沼风险是怎样叠加的？", "草地行军中筹粮、干粮和露营记录说明了什么？"],
+        "瑞金集结出发": ["长征出发时机关、辎重和部队行动方式带来了哪些后续压力？", "从瑞金到湘江之间，红军行动为什么会逐步变得被动？"],
+        "吴起镇大会师": ["中央红军到达陕北后，为什么能为革命保存骨干力量？", "吴起镇会师与陕北根据地之间怎样形成战略接续？"],
+    }
+
+    basics = basic_map.get(event, [f"{event}的核心历史意义是什么？", f"理解{event}时最容易忽略哪一点？"])
+    details = detail_map.get(event, [f"{event}中有哪些容易被忽略的关键细节？", f"{event}有哪些需要结合史料核对的细节？"])
+
+    if relic_matches:
+        relic_title = str(relic_matches[0].get("title") or "这件相关文物")
+        related_items = [
+            f"{relic_title}背后反映了怎样的行军处境和历史压力？",
+            f"如果把这件文物放回{event}现场，它能证明或补充哪些史料细节？",
+        ]
+    elif citations:
+        source = str(citations[0].get("source") or "本次命中的史料")
+        short_source = source.split("/")[-1].replace(".pdf", "").replace("_ocr", "").replace("副本", "")
+        related_items = [
+            f"从《{short_source[:28]}》这类史料看，{event}还有哪些值得继续核对的细节？",
+            f"{event}还应与哪些人物、会议、战役或路线变化联系起来考察？",
+        ]
+    else:
+        related_items = [
+            f"{event}还应与哪些人物、会议、战役或路线变化联系起来考察？",
+            f"如果继续查史料，{event}最应该补充哪类原始证据？",
+        ]
+
+    result = [
+        *[{"type": "基础理解", "question": question} for question in basics[:2]],
+        *[{"type": "深入细节", "question": question} for question in details[:2]],
+        *[{"type": "关联拓展", "question": question} for question in related_items[:2]],
+    ]
+
+    # 保留模型生成的高质量问题，但不打乱前三类结构。
+    seen = {item["question"] for item in result}
+    for question in raw_followups:
+        q = str(question or "").strip()
+        if q and q not in seen:
+            result.append({"type": "继续追问", "question": q})
+            seen.add(q)
+        if len(result) >= 5:
+            break
+    return result
 
 
 def _enforce_intent_answer(
@@ -620,11 +723,20 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             evidence_note = "\n\n【史料提示】当前知识库没有检索到足够直接的站点片段，本段采用预设展线讲稿结构；后续可继续补充对应原始 PDF 资料。"
 
         relic_matches = match_relics(user_query, station.voice + station.detail + context)
+        guide_followups = _build_discovery_followups(
+            user_query,
+            station.voice,
+            station.detail,
+            [next_station_prompt(station_index), station.deep_followup],
+            relic_matches,
+            citations,
+            intent,
+        )
         return {
             "llm_data": {
                 "voice_script": station.voice,
                 "detailed_text": station.detail + evidence_note,
-                "follow_ups": [next_station_prompt(station_index), station.deep_followup],
+                "follow_ups": guide_followups,
             },
             "raw_evidence": context,
             "citations": citations,
@@ -732,10 +844,18 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             detailed_text = response_text
 
         voice_script, detailed_text = _enforce_intent_answer(intent, voice_script, detailed_text)
-        follow_ups = [q for q in [followup_1, followup_2] if q]
         relic_matches = match_relics(
             user_query,
             voice_script + detailed_text + context
+        )
+        follow_ups = _build_discovery_followups(
+            user_query,
+            voice_script,
+            detailed_text,
+            [q for q in [followup_1, followup_2] if q],
+            relic_matches,
+            citations,
+            intent,
         )
         return {
             "llm_data": {
