@@ -308,6 +308,23 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
+def _has_history_signal(query: str) -> bool:
+    """避免问候、闲聊被中文滑窗误命中史料。"""
+    q = _normalize_text(query)
+    if not q:
+        return False
+
+    domain_signals = [
+        "长征", "红军", "中央红军", "苏区", "根据地", "国民党", "蒋介石",
+        "遵义", "赤水", "湘江", "泸定桥", "大渡河", "金沙江", "夹金山",
+        "草地", "毛儿盖", "班佑", "阿坝", "吴起", "瑞金", "会宁",
+        "战役", "战斗", "会议", "会师", "行军", "渡河", "突围", "围追堵截",
+        "毛泽东", "周恩来", "朱德", "博古", "李德", "张国焘", "彭德怀",
+        "史料", "档案", "文献", "回忆", "日记", "文物",
+    ]
+    return any(signal in q for signal in domain_signals)
+
+
 def _extract_terms(query: str) -> List[str]:
     """轻量中文短语提取：适合不用额外安装 jieba 的演示项目。"""
     q = _normalize_text(query)
@@ -356,6 +373,8 @@ def retrieve_relevant_chunks(
         return []
 
     top_k = top_k or llm_config.max_context_chunks
+    if intent is None and not _has_history_signal(user_query):
+        return []
     terms = _extract_terms(user_query)
     if intent:
         for term in intent.get("required_terms", []):
@@ -501,12 +520,19 @@ def _extract_tag(tag: str, text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _safe_default_response(message: str, detail: str, context: str, citations: List[Dict[str, Any]], evidence_snippets: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+def _safe_default_response(
+    message: str,
+    detail: str,
+    context: str,
+    citations: List[Dict[str, Any]],
+    evidence_snippets: List[Dict[str, Any]] | None = None,
+    user_query: str = "",
+) -> Dict[str, Any]:
     return {
         "llm_data": {
             "voice_script": message,
             "detailed_text": detail,
-            "follow_ups": _build_discovery_followups("", message, detail, [], [], citations, None),
+            "follow_ups": _build_discovery_followups(user_query, message, detail, [], [], citations, None),
         },
         "raw_evidence": context,
         "citations": citations,
@@ -519,6 +545,17 @@ def _followup_event_label(user_query: str, answer_text: str, intent: Dict[str, A
     combined = f"{user_query}\n{answer_text}"
     if intent and intent.get("scene"):
         return str(intent["scene"])
+    topic_markers = [
+        (["借粮", "筹粮", "粮食", "粮款", "买粮", "给养", "补给"], "红军借粮与群众纪律"),
+        (["吃什么", "干粮", "野菜", "草根", "皮带", "饥饿", "断粮"], "红军行军补给困难"),
+        (["群众", "百姓", "老乡", "民众", "军民", "支前"], "红军与群众关系"),
+        (["纪律", "规定", "赔偿", "借条", "欠条", "银元", "不拿群众"], "红军群众纪律"),
+        (["伤员", "病员", "担架", "医院", "救护", "卫生"], "红军伤病员救护"),
+        (["行军", "路线", "转移", "掉队", "宿营", "露营"], "红军行军组织"),
+    ]
+    for markers, label in topic_markers:
+        if any(marker in combined for marker in markers):
+            return label
     event_markers = [
         ("遵义", "遵义会议"),
         ("赤水", "四渡赤水"),
@@ -537,7 +574,11 @@ def _followup_event_label(user_query: str, answer_text: str, intent: Dict[str, A
     for marker, label in event_markers:
         if marker in combined:
             return label
-    return "本段长征史实"
+    compact_query = re.sub(r"\s+", "", user_query or "")
+    compact_query = re.sub(r"[，。！？、；：,.!?;:（）()《》\"'“”‘’]", "", compact_query)
+    if compact_query:
+        return compact_query[:18]
+    return "这次提问涉及的长征史实"
 
 
 def _build_discovery_followups(
@@ -551,6 +592,13 @@ def _build_discovery_followups(
 ) -> List[Dict[str, str]]:
     """生成稳定的三类知识发现追问；LLM 给的问题只作为补充素材。"""
     answer_text = f"{voice_script}\n{detailed_text}"
+    if not intent and not citations and not relic_matches and not _has_history_signal(user_query):
+        return [
+            {"type": "基础理解", "question": "我可以问你哪些长征史料问题？"},
+            {"type": "基础理解", "question": "你能按站点讲解长征路线吗？"},
+            {"type": "深入细节", "question": "如何查看回答引用的原始史料证据？"},
+            {"type": "关联拓展", "question": "如果从瑞金一路听到吴起镇，应该按什么顺序？"},
+        ]
     event = _followup_event_label(user_query, answer_text, intent)
 
     basic_map = {
@@ -564,6 +612,12 @@ def _build_discovery_followups(
         "跨越松潘草地": ["红军过草地最核心的困难是什么？", "为什么说草地的危险不同于普通战斗？"],
         "瑞金集结出发": ["为什么说瑞金出发是一次被迫的战略转移？", "长征出发时红军为什么必须带着机关和辎重一起行动？"],
         "吴起镇大会师": ["吴起镇大会师为什么标志着长征打开了新局面？", "中央红军到达陕北为什么不只是走到终点？"],
+        "红军借粮与群众纪律": ["红军为什么要把借粮和群众纪律联系起来理解？", "借粮问题怎样反映红军在行军中的补给压力？"],
+        "红军行军补给困难": ["红军行军中的补给困难主要来自哪些方面？", "为什么不能把红军缺粮简单理解成一时物资不足？"],
+        "红军与群众关系": ["红军与群众关系为什么会影响长征中的行军和立足？", "群众支持在长征途中通常通过哪些具体方式体现？"],
+        "红军群众纪律": ["红军群众纪律为什么是长征政治工作的重要部分？", "借条、赔偿和纪律规定能说明红军怎样处理军民关系？"],
+        "红军伤病员救护": ["伤病员救护为什么会成为长征行军组织的重要考验？", "长征中的伤病员问题怎样影响部队行动节奏？"],
+        "红军行军组织": ["红军行军组织为什么不只是路线选择问题？", "宿营、掉队和转移节奏怎样影响长征中的部队保存？"],
     }
     detail_map = {
         "湘江战役/血战湘江": ["湘江战役中界首、光华铺等渡河点为什么如此关键？", "红三十四师等后卫部队在湘江战役中承担了什么任务？"],
@@ -576,6 +630,12 @@ def _build_discovery_followups(
         "跨越松潘草地": ["过草地时缺粮、疾病、掉队和泥沼风险是怎样叠加的？", "草地行军中筹粮、干粮和露营记录说明了什么？"],
         "瑞金集结出发": ["长征出发时机关、辎重和部队行动方式带来了哪些后续压力？", "从瑞金到湘江之间，红军行动为什么会逐步变得被动？"],
         "吴起镇大会师": ["中央红军到达陕北后，为什么能为革命保存骨干力量？", "吴起镇会师与陕北根据地之间怎样形成战略接续？"],
+        "红军借粮与群众纪律": ["红军在借粮时有哪些具体纪律规定？", "史料中的借粮、筹粮记录能否看出红军与群众的互动方式？"],
+        "红军行军补给困难": ["筹粮、干粮和就地补给在不同路段有什么差别？", "补给不足会怎样连带影响宿营、伤病和行军速度？"],
+        "红军与群众关系": ["哪些史料细节能说明群众支持不是抽象口号？", "红军进入不同地区时，群众关系为什么会出现差异？"],
+        "红军群众纪律": ["红军群众纪律中哪些规定最能体现政治动员目标？", "纪律执行和实际补给困难之间存在怎样的张力？"],
+        "红军伤病员救护": ["伤病员、担架和后续转移记录能说明哪些组织困难？", "长征途中救护条件不足会怎样改变部队处置方式？"],
+        "红军行军组织": ["史料中的宿营、掉队和队列记录能说明哪些组织压力？", "行军组织如何同时受到地形、敌情和补给的影响？"],
     }
 
     basics = basic_map.get(event, [f"{event}的核心历史意义是什么？", f"理解{event}时最容易忽略哪一点？"])
@@ -588,10 +648,8 @@ def _build_discovery_followups(
             f"如果把这件文物放回{event}现场，它能证明或补充哪些史料细节？",
         ]
     elif citations:
-        source = str(citations[0].get("source") or "本次命中的史料")
-        short_source = source.split("/")[-1].replace(".pdf", "").replace("_ocr", "").replace("副本", "")
         related_items = [
-            f"从《{short_source[:28]}》这类史料看，{event}还有哪些值得继续核对的细节？",
+            f"从本次命中的原始史料看，{event}还有哪些值得继续核对的细节？",
             f"{event}还应与哪些人物、会议、战役或路线变化联系起来考察？",
         ]
     else:
@@ -757,6 +815,7 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             context,
             citations,
             evidence_snippets,
+            user_query,
         )
 
     mode_requirements = """
@@ -876,4 +935,5 @@ def get_veteran_response(user_query: str) -> Dict[str, Any]:
             context,
             citations,
             evidence_snippets,
+            user_query,
         )
