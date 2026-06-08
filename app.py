@@ -47,6 +47,42 @@ def safe_text(value) -> str:
     # 避免模型输出的 ``` 触发 Markdown 代码块，导致后续 HTML 原样显示
     text = text.replace("`", "&#96;")
     return text.replace("\n", "<br>")
+
+
+def safe_evidence_text(value) -> str:
+    """证据片段来自 PDF/OCR，先合并硬换行，避免正文只占左侧窄栏。"""
+    raw_lines = str(value or "").splitlines()
+    paragraphs: list[str] = []
+    current = ""
+
+    for raw_line in raw_lines:
+        line = raw_line.strip()
+        if not line:
+            if current:
+                paragraphs.append(current)
+                current = ""
+            continue
+
+        if current:
+            previous = current[-1]
+            separator = " " if previous.isascii() and previous.isalnum() and line[0].isascii() and line[0].isalnum() else ""
+            current = f"{current}{separator}{line}"
+        else:
+            current = line
+
+    if current:
+        paragraphs.append(current)
+
+    if not paragraphs:
+        paragraphs = [str(value or "")]
+
+    return "".join(
+        f"<p>{html.escape(paragraph, quote=True).replace('`', '&#96;')}</p>"
+        for paragraph in paragraphs
+        if paragraph
+    )
+
+
 def clean_source_name(source: str) -> str:
     """清理史料来源文件名，只保留适合展示的书名。"""
     if not source:
@@ -288,28 +324,13 @@ def get_latest_guide_station() -> dict:
     if isinstance(current, dict) and current.get("title"):
         return current
 
+    # Only explicit guide responses should restore station context. Ordinary
+    # Q&A may mention "遵义" or "草地", but that is a topic, not navigation state.
     for msg in reversed(st.session_state.get("messages", [])):
         if msg.get("role") != "assistant":
             continue
         station = (msg.get("data") or {}).get("guide_station") or {}
         if station.get("title"):
-            st.session_state.active_guide_station = station
-            return station
-
-    for msg in reversed(st.session_state.get("messages", [])):
-        if msg.get("role") == "user":
-            station = infer_station_from_text(msg.get("content", ""))
-        else:
-            data = msg.get("data") or {}
-            llm_data = data.get("llm_data") or {}
-            station = infer_station_from_text(
-                " ".join([
-                    str(llm_data.get("voice_script", "")),
-                    str(llm_data.get("detailed_text", "")),
-                    " ".join(str(item) for item in llm_data.get("follow_ups", [])),
-                ])
-            )
-        if station:
             st.session_state.active_guide_station = station
             return station
 
@@ -328,6 +349,8 @@ def handle_response(user_query: str):
         guide_station = full_response.get("guide_station")
         if guide_station:
             st.session_state.active_guide_station = guide_station
+        elif not st.session_state.get("guide_mode"):
+            st.session_state.active_guide_station = None
         voice_script = full_response.get("llm_data", {}).get("voice_script", "")
         try:
             audio_path = speak(voice_script) if voice_script else None
@@ -376,6 +399,7 @@ elif params.get("guide") == "1" and not st.session_state.get("_handled_query_par
 elif params.get("guide") == "0" and not st.session_state.get("_handled_query_params"):
     st.session_state._handled_query_params = True
     st.session_state.guide_mode = False
+    st.session_state.active_guide_station = None
     try:
         st.query_params.clear()
     except Exception:
@@ -516,7 +540,7 @@ st.markdown(f"""
     }}
     .evidence-details {{
         margin-top: 6px; border: 1px solid rgba(212,175,55,0.18); border-radius: 10px;
-        background: rgba(0,0,0,0.16); overflow: hidden;
+        background: rgba(0,0,0,0.16); overflow: hidden; width: 100%; box-sizing: border-box;
     }}
     .evidence-details summary {{
         cursor: pointer; list-style: none; padding: 10px 12px; color: #d4af37;
@@ -526,8 +550,21 @@ st.markdown(f"""
     .evidence-details summary::before {{ content: '▸'; display: inline-block; margin-right: 8px; transition: transform .2s ease; }}
     .evidence-details[open] summary::before {{ transform: rotate(90deg); }}
     .evidence-card {{
-        margin: 0 12px 12px 12px; padding: 12px 14px; border-left: 2px solid rgba(212,175,55,0.45);
-        background: rgba(40, 10, 10, 0.42); color: #bfbfbf; border-radius: 8px; font-size: 13px; line-height: 1.75;
+        width: calc(100% - 24px); box-sizing: border-box;
+        margin: 0 12px 12px 12px; padding: 16px 18px; border-left: 2px solid rgba(212,175,55,0.45);
+        background: rgba(40, 10, 10, 0.42); color: #d4d4d4; border-radius: 8px; font-size: 14px; line-height: 1.85;
+        overflow-wrap: anywhere;
+    }}
+    .evidence-body {{
+        width: 100%;
+        max-width: none;
+        display: block;
+    }}
+    .evidence-body p {{
+        margin: 0 0 10px 0;
+    }}
+    .evidence-body p:last-child {{
+        margin-bottom: 0;
     }}
     .relic-grid {{
     display: grid;
@@ -603,7 +640,7 @@ st.markdown(f"""
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(212,175,55,0.18);
 }}
-    .evidence-meta {{ color: #d4af37; font-size: 12px; margin-bottom: 6px; }}
+    .evidence-meta {{ color: #d4af37; font-size: 12px; margin-bottom: 10px; line-height: 1.55; overflow-wrap: anywhere; }}
     .retrieval-loading {{
         position: fixed; top: 58%; left: 50%; transform: translateX(-50%); z-index: 10001;
         padding: 12px 22px; border-radius: 999px;
@@ -910,8 +947,13 @@ if st.session_state.messages:
 
         citations = res.get("citations", [])
         snippets = res.get("evidence_snippets", [])
-        answer_mode = "讲解员模式" if guide_station or st.session_state.guide_mode else "问答模式"
-        active_guide_station = guide_station or get_latest_guide_station()
+        if not isinstance(guide_station, dict):
+            guide_station = {}
+        in_guide_context = bool(guide_station or st.session_state.guide_mode)
+        answer_mode = "讲解员模式" if in_guide_context else "问答模式"
+        active_guide_station = guide_station or (get_latest_guide_station() if in_guide_context else {})
+        if not isinstance(active_guide_station, dict):
+            active_guide_station = {}
         station_title = guide_station.get("title") or "自由问答"
         station_date = guide_station.get("date") or "按需检索"
         station_index = int(guide_station.get("index", 0) or 0)
@@ -963,10 +1005,6 @@ if st.session_state.messages:
                 " 本次没有检索到直接匹配的史料切片，回答应作为谨慎讲解，不宜当作精确出处引用。</div>"
             )
         copy_text = build_copy_text(res)
-        if not active_guide_station and len(st.session_state.messages) >= 2:
-            active_guide_station = infer_station_from_text(st.session_state.messages[-2].get("content", ""))
-            if active_guide_station:
-                st.session_state.active_guide_station = active_guide_station
         guide_resume_title = str(active_guide_station.get("title") or "")
         nav_index = int(active_guide_station.get("index", 0) or 0) if active_guide_station else 0
         prev_station = station_by_index(nav_index - 1)
@@ -1006,7 +1044,7 @@ if st.session_state.messages:
             make_action_link(
                 "重新生成",
                 query=current_user_query,
-                station_title=guide_resume_title or None,
+                station_title=(guide_resume_title or None) if in_guide_context else None,
                 css_class="command-link",
             )
             if current_user_query
@@ -1104,24 +1142,24 @@ if st.session_state.messages:
                 source = safe_text(clean_source_name(source_raw))
                 page = safe_text(item.get("page", "?"))
                 hits = safe_text("、".join(item.get("hits", [])[:5]))
-                content = safe_text(item.get("content", ""))
+                content = safe_evidence_text(item.get("content", ""))
                 cards.append(
                     f"<div class='evidence-card'>"
                     f"<div class='evidence-meta'>证据 {idx} ｜《{source}》第 {page} 页 ｜ 命中：{hits}</div>"
-                    f"<div>{content}</div>"
+                    f"<div class='evidence-body'>{content}</div>"
                     f"</div>"
                 )
             evidence_html = "".join(cards)
         else:
-            raw = safe_text(res.get("raw_evidence", "本次没有检索到可展示的原始史料片段。"))
-            evidence_html = f"<div class='evidence-card'>{raw}</div>"
+            raw = safe_evidence_text(res.get("raw_evidence", "本次没有检索到可展示的原始史料片段。"))
+            evidence_html = f"<div class='evidence-card'><div class='evidence-body'>{raw}</div></div>"
 
         follow_ups = normalize_followups(llm_data.get("follow_ups", []))
         followup_html = ""
         if follow_ups:
             grouped_followups = {}
             ordered_types = []
-            followup_station_title = str(active_guide_station.get("title") or "")
+            followup_station_title = str(active_guide_station.get("title") or "") if in_guide_context else ""
             for item in follow_ups[:8]:
                 follow_type = str(item["type"])
                 if follow_type not in grouped_followups:
